@@ -1,0 +1,11 @@
+{
+  "name": "ticketd",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.22.0",
+  "scripts": {
+    "dev:server": "pnpm --filter @ticketd/server start:dev",
+    "build:shared": "pnpm --filter @ticketd/shared-types build",
+    "build:server": "pnpm --filter @ticketd/server build"
+  }
+}
