@@ -4,5 +4,105 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+}
+
+enum GameStatus {
+  SCHEDULED // 등록됨, 예매 오픈 전
+  ON_SALE // 예매 중
+  CLOSED // 예매 마감(경기 시작 or 매진)
+}
+
+enum SeatStatus {
+  AVAILABLE // 선택 가능
+  HELD // 홀드 중 (Redis TTL과 동기)
+  RESERVED // 예매 확정
+}
+
+enum ReservationStatus {
+  PENDING // 결제 대기 (홀드 → 예매 진입)
+  CONFIRMED // 결제 완료
+  CANCELED // 취소 (좌석 반환)
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  nickname  String
+  createdAt DateTime @default(now())
+
+  holds        SeatHold[]
+  reservations Reservation[]
+
+  @@map("users")
+}
+
+model Game {
+  id       String     @id @default(uuid())
+  title    String // 예: "LG vs 두산"
+  venue    String // 예: "잠실야구장"
+  startsAt DateTime // 경기 시작
+  opensAt  DateTime // 예매 오픈 시각 (flash sale 기준점)
+  status   GameStatus @default(SCHEDULED)
+
+  createdAt DateTime @default(now())
+  seats     Seat[]
+
+  @@map("games")
+}
+
+model Seat {
+  id      String     @id @default(uuid())
+  gameId  String
+  section String // 구역 (예: "1루 블루석")
+  row     String
+  number  Int
+  price   Int
+  status  SeatStatus @default(AVAILABLE)
+
+  game         Game          @relation(fields: [gameId], references: [id])
+  holds        SeatHold[]
+  reservations Reservation[]
+
+  // 동일 경기 내 좌석 물리적 중복 방지
+  @@unique([gameId, section, row, number])
+  @@index([gameId, status])
+  @@map("seats")
+}
+
+// 홀드의 원본(source of truth)은 Redis(TTL 키) — 이 테이블은 감사/분석용 기록
+model SeatHold {
+  id        String    @id @default(uuid())
+  seatId    String
+  userId    String
+  expiresAt DateTime // Redis TTL과 동일 시각
+  releasedAt DateTime? // 만료/취소로 반환된 시각 (null=홀드 유지 또는 예매 전환)
+  createdAt DateTime  @default(now())
+
+  seat Seat @relation(fields: [seatId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([seatId])
+  @@index([userId])
+  @@map("seat_holds")
+}
+
+model Reservation {
+  id             String            @id @default(uuid())
+  seatId         String
+  userId         String
+  status         ReservationStatus @default(PENDING)
+  idempotencyKey String            @unique // M3: 중복 결제/예매 차단
+  confirmedAt    DateTime?
+  canceledAt     DateTime?
+  createdAt      DateTime          @default(now())
+
+  seat Seat @relation(fields: [seatId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  // 오버셀 0의 최종 안전장치: 활성(PENDING/CONFIRMED) 예매는 좌석당 1건
+  // Prisma가 partial unique를 지원하지 않아 마이그레이션 SQL로 직접 추가:
+  // CREATE UNIQUE INDEX reservations_active_seat_key ON reservations ("seatId") WHERE status <> 'CANCELED';
+  @@index([userId])
+  @@index([seatId])
+  @@map("reservations")
 }
