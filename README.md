@@ -41,7 +41,7 @@ tools/loadbot          자작 부하·매크로 (레드팀, M4)
 
 ```bash
 pnpm install                 # 워크스페이스 링크 + 의존성 설치
-docker compose up -d         # Postgres · Redis (의존성) — M1에서 추가 예정
+# 로컬에 PostgreSQL · Redis 실행 필요 (Docker 미사용)
 ```
 
 ## 실행
